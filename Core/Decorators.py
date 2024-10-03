@@ -24,8 +24,8 @@ class CommandDecorator:
             })
             return func
         return wrapper
-    
-    def CheckPermission(self, **permissions):
+
+    def permissions(self, **permissions):
         def wrapper(func):
             async def wrapped_func(client, interaction, *args, **kwargs):
                 print(f"Interaction data for debugging: {interaction}")
@@ -64,6 +64,69 @@ class CommandDecorator:
             return wrapped_func
         return wrapper
 
+    def member(self, id=None):
+        def wrapper(func):
+            async def wrapped_func(client, interaction, *args, **kwargs):
+                user_id = str(interaction['member']['user']['id'])
+                allowed_ids = [str(id)] if isinstance(id, str) else [str(uid) for uid in id]
+
+                if user_id not in allowed_ids:
+                    await client.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message="You do not have permission to use this command.",
+                        ephemeral=True
+                    )
+                    return
+                return await func(client, interaction, *args, **kwargs)
+            return wrapped_func
+        return wrapper
+
+    def role(self, id=None):
+        def wrapper(func):
+            async def wrapped_func(client, interaction, *args, **kwargs):
+                if 'roles' not in interaction['member']:
+                    await client.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message="Unable to verify roles.",
+                        ephemeral=True
+                    )
+                    return
+
+                user_roles = set(str(role) for role in interaction['member']['roles'])
+                allowed_roles = {str(id)} if isinstance(id, str) else {str(rid) for rid in id}
+
+                if not user_roles.intersection(allowed_roles):
+                    await client.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message="You do not have the required role to use this command.",
+                        ephemeral=True
+                    )
+                    return
+                return await func(client, interaction, *args, **kwargs)
+            return wrapped_func
+        return wrapper
+
+    def dev(self, id=None):
+        def wrapper(func):
+            async def wrapped_func(client, interaction, *args, **kwargs):
+                user_id = str(interaction['member']['user']['id'])
+                dev_ids = [str(id)] if isinstance(id, str) else [str(dev_id) for dev_id in id]
+
+                if user_id not in dev_ids:
+                    await client.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message="This command is restricted to bot developers only.",
+                        ephemeral=True
+                    )
+                    return
+                return await func(client, interaction, *args, **kwargs)
+            return wrapped_func
+        return wrapper
+
     def sub_command(self, parent_name, name=None, description=None):
         def wrapper(func):
             parent_command = next((cmd for cmd in self.client.commands if cmd["name"] == parent_name), None)
@@ -87,7 +150,7 @@ class CommandDecorator:
             return func
         return wrapper
 
-    def sub_command_group(self, parent_name, group_name, description=None):     
+    def sub_command_group(self, parent_name, group_name, description=None):
         def wrapper(func):
             parent_command = next((cmd for cmd in self.client.commands if cmd["name"] == parent_name), None)
             if not parent_command:
@@ -100,10 +163,10 @@ class CommandDecorator:
                 raise ValueError(f"Description is required for subcommand group '{group_name}'")
 
             sub_command_group = {
-                "type": 2,  
+                "type": 2,
                 "name": group_name,
                 "description": description,
-                "options": [] 
+                "options": []
             }
 
             parent_command["options"].append(sub_command_group)
