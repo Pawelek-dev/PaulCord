@@ -52,7 +52,7 @@ class CommandRegistration:
             existing_command['description'] == new_command['description'] and
             existing_command.get('options', []) == new_command.get('options', []) and
             existing_command.get('integration_types', []) == new_command.get('integration_types', []) and
-            existing_command.get('version', 1) == new_command.get('version', 1)  # Porównanie wersji polecenia
+            existing_command.get('version', 1) == new_command.get('version', 1)
         )
 
     async def register_commands(self):

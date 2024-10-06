@@ -53,14 +53,57 @@ class Intents:
         | GUILD_MESSAGE_TYPING
     )
 
+    DEFAULT_FLAGS = {
+        'DEFAULT': DEFAULT,
+        'ALL': ALL,
+    }
+
+    def __int__(self):
+        return self.value
+
+    def __init__(self, *intents):
+        self.value = self.parse_intents(*intents)
+
+    def parse_intents(self, *intents):
+        result = 0
+        for intent in intents:
+            if isinstance(intent, str):
+                result |= self.DEFAULT_FLAGS.get(intent.upper(), 0)
+            elif isinstance(intent, int):
+                result |= intent
+        return result
+
+    def has(self, intent):
+        return (self.value & intent) == intent
+
+    def __or__(self, other):
+        return Intents(self.value | other.value)
+
+    def __and__(self, other):
+        return Intents(self.value & other.value)
+
+    def __repr__(self):
+        return f"<Intents value={self.value}>"
+
     @classmethod
     def none(cls):
-        return 0
+        return cls(0)
 
     @classmethod
     def all(cls):
-        return cls.ALL
+        return cls(cls.ALL)
 
     @classmethod
     def default(cls):
-        return cls.DEFAULT
+        return cls(cls.DEFAULT)
+
+    @classmethod
+    def custom(cls, *intents):
+        return cls(*intents)
+
+    @staticmethod
+    def get_intent_value(*intents):
+        intent_value = 0
+        for intent in intents:
+            intent_value |= intent
+        return intent_value
