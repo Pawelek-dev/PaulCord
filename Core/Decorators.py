@@ -52,7 +52,7 @@ class CommandDecorator:
                         interaction['id'],
                         interaction['token'],
                         message="Unable to verify permissions.",
-                        ephemeral=True
+                        ephemeral=False
                     )
                     return
 
@@ -72,6 +72,46 @@ class CommandDecorator:
                         interaction['id'],
                         interaction['token'],
                         message=f"Missing required permissions: {', '.join(missing_permissions)}",
+                        ephemeral=False
+                    )
+                    return
+
+                return await func(client, interaction, *args, **kwargs)
+
+            return wrapped_func
+        return wrapper
+    
+
+    def permissionsbot(self, **permissions):
+        def wrapper(func):
+            async def wrapped_func(client, interaction, *args, **kwargs):
+                print(f"Checking bot permissions for interaction: {interaction}")
+
+                if 'app_permissions' not in interaction:
+                    await client.api_helper.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message="Unable to verify bot permissions.",
+                        ephemeral=True
+                    )
+                    return
+
+                bot_permissions = int(interaction['app_permissions'])
+                print(f"Bot's permissions value: {bot_permissions}")
+
+                missing_permissions = []
+
+                for permission, required in permissions.items():
+                    required_bit = 1 << required
+                    print(f"Checking bot permission '{permission}' ({required_bit}) against bot permissions: {bot_permissions}")
+                    if not (bot_permissions & required_bit):
+                        missing_permissions.append(permission)
+
+                if missing_permissions:
+                    await client.api_helper.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message=f"Bot is missing required permissions: {', '.join(missing_permissions)}",
                         ephemeral=True
                     )
                     return
