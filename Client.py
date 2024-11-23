@@ -3,7 +3,7 @@ import aiohttp
 
 from .Core.CommandHandler import CommandHandler
 from .Core.InteractionHandler import InteractionHandler
-from .Core.WebSocketManager import WebSocketManager
+from .Core.WebSocket import WebSocketManager
 from .Core.APIHelper import APIHelper
 from .Core.Decorators import CommandDecorator
 from .Core.Intents import Intents
