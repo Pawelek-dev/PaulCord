@@ -1,60 +1,64 @@
-class ChannelManager:
-    def __init__(self, client):
-        self.client = client
+import aiohttp
 
-    def create_channel(self, name, type_):
-        url = f"{self.client.base_url}/guilds/{self.client.get_guild_id()}/channels"
-        headers = {
-            "Authorization": f"Bot {self.client.token}",
+class ChannelManager:
+    @classmethod
+    def get_headers(cls, client):
+        return {
+            "Authorization": f"Bot {client.token}",
             "Content-Type": "application/json"
         }
+
+    @classmethod
+    async def create_channel(cls, client, name, type_):
+        url = f"{client.base_url}/guilds/{client.get_guild_id()}/channels"
+        headers = cls.get_headers(client)
         json_data = {
             "name": name,
             "type": type_
         }
-        response = self.client.session.post(url, headers=headers, json=json_data)
-        if response.status_code == 201:
-            return response.json()
-        else:
-            print(f"Failed to create channel: {response.status_code} {response.text}")
-            return None
 
-    def edit_channel(self, channel_id, new_name):
-        url = f"{self.client.base_url}/channels/{channel_id}"
-        headers = {
-            "Authorization": f"Bot {self.client.token}",
-            "Content-Type": "application/json"
-        }
+        async with client.session.post(url, headers=headers, json=json_data) as response:
+            if response.status == 201:
+                return await response.json()
+            else:
+                print(f"Failed to create channel: {response.status} {await response.text()}")
+                return None
+
+    @classmethod
+    async def edit_channel(cls, client, channel_id, new_name):
+        url = f"{client.base_url}/channels/{channel_id}"
+        headers = cls.get_headers(client)
         json_data = {
             "name": new_name
         }
-        response = self.client.session.patch(url, headers=headers, json=json_data)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"Failed to edit channel: {response.status_code} {response.text}")
-            return None
 
-    def delete_channel(self, channel_id):
-        url = f"{self.client.base_url}/channels/{channel_id}"
-        headers = {
-            "Authorization": f"Bot {self.client.token}"
-        }
-        response = self.client.session.delete(url, headers=headers)
-        if response.status_code == 204:
-            return {"status": "Channel deleted successfully"}
-        else:
-            print(f"Failed to delete channel: {response.status_code} {response.text}")
-            return None
+        async with client.session.patch(url, headers=headers, json=json_data) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                print(f"Failed to edit channel: {response.status} {await response.text()}")
+                return None
 
-    def list_channels(self):
-        url = f"{self.client.base_url}/guilds/{self.client.get_guild_id()}/channels"
-        headers = {
-            "Authorization": f"Bot {self.client.token}"
-        }
-        response = self.client.session.get(url, headers=headers)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"Failed to list channels: {response.status_code} {response.text}")
-            return None
+    @classmethod
+    async def delete_channel(cls, client, channel_id):
+        url = f"{client.base_url}/channels/{channel_id}"
+        headers = cls.get_headers(client)
+
+        async with client.session.delete(url, headers=headers) as response:
+            if response.status == 204:
+                return {"status": "Channel deleted successfully"}
+            else:
+                print(f"Failed to delete channel: {response.status} {await response.text()}")
+                return None
+
+    @classmethod
+    async def list_channels(cls, client):
+        url = f"{client.base_url}/guilds/{client.get_guild_id()}/channels"
+        headers = cls.get_headers(client)
+
+        async with client.session.get(url, headers=headers) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                print(f"Failed to list channels: {response.status} {await response.text()}")
+                return None
