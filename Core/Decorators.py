@@ -1,4 +1,5 @@
-from PaulCord.Core.CommandRegistration import SlashCommand
+from ..Core.CommandRegistration import SlashCommand
+import asyncio
 
 class CommandDecorator:
     def __init__(self, client):
@@ -10,32 +11,48 @@ class CommandDecorator:
             if not description:
                 raise ValueError(f"Description is required for command '{name}'")
 
-            cmd = SlashCommand(
-                name=name or func.__name__,
-                description=description or func.__doc__,
-                options=options or []
-            )
-            self.client.commands.append({
-                "name": cmd.name,
-                "description": cmd.description,
+            cmd = {
+                "name": name or func.__name__,
+                "description": description or func.__doc__,
                 "func": func,
-                "options": cmd.options,
+                "options": options or [],
                 "integration_types": integration_types
-            })
+            }
+
+            self.client.commands.append(cmd)
+            print(f"Registered slash command: {cmd['name']} - {cmd['description']}")
+
             return func
         return wrapper
-    
-    def CheckPermission(self, **permissions):
+
+    async def reload_command(self, command_name):
+
+        command = next((cmd for cmd in self.client.commands if cmd['name'] == command_name), None)
+        
+        if not command:
+            print(f"Command '{command_name}' not found.")
+            return f"Command '{command_name}' not found."
+
+        try:
+            await self.client.command_registration.sync_commands()
+            print(f"Command '{command_name}' reloaded successfully.")
+            return f"Command '{command_name}' reloaded successfully."
+        except Exception as e:
+            print(f"Failed to reload command '{command_name}': {e}")
+            return f"Failed to reload command '{command_name}': {e}"
+
+
+    def permissions(self, **permissions):
         def wrapper(func):
             async def wrapped_func(client, interaction, *args, **kwargs):
                 print(f"Interaction data for debugging: {interaction}")
 
                 if 'member' not in interaction or 'permissions' not in interaction['member']:
-                    await client.send_interaction_response(
+                    await client.api_helper.send_interaction_response(
                         interaction['id'],
                         interaction['token'],
                         message="Unable to verify permissions.",
-                        ephemeral=True
+                        ephemeral=False
                     )
                     return
 
@@ -51,10 +68,50 @@ class CommandDecorator:
                         missing_permissions.append(permission)
 
                 if missing_permissions:
-                    await client.send_interaction_response(
+                    await client.api_helper.send_interaction_response(
                         interaction['id'],
                         interaction['token'],
                         message=f"Missing required permissions: {', '.join(missing_permissions)}",
+                        ephemeral=False
+                    )
+                    return
+
+                return await func(client, interaction, *args, **kwargs)
+
+            return wrapped_func
+        return wrapper
+    
+
+    def permissionsbot(self, **permissions):
+        def wrapper(func):
+            async def wrapped_func(client, interaction, *args, **kwargs):
+                print(f"Checking bot permissions for interaction: {interaction}")
+
+                if 'app_permissions' not in interaction:
+                    await client.api_helper.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message="Unable to verify bot permissions.",
+                        ephemeral=True
+                    )
+                    return
+
+                bot_permissions = int(interaction['app_permissions'])
+                print(f"Bot's permissions value: {bot_permissions}")
+
+                missing_permissions = []
+
+                for permission, required in permissions.items():
+                    required_bit = 1 << required
+                    print(f"Checking bot permission '{permission}' ({required_bit}) against bot permissions: {bot_permissions}")
+                    if not (bot_permissions & required_bit):
+                        missing_permissions.append(permission)
+
+                if missing_permissions:
+                    await client.api_helper.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message=f"Bot is missing required permissions: {', '.join(missing_permissions)}",
                         ephemeral=True
                     )
                     return
@@ -64,50 +121,67 @@ class CommandDecorator:
             return wrapped_func
         return wrapper
 
-    def sub_command(self, parent_name, name=None, description=None):
+    def member(self, id=None):
         def wrapper(func):
-            parent_command = next((cmd for cmd in self.client.commands if cmd["name"] == parent_name), None)
-            if not parent_command:
-                raise ValueError(f"No parent command with name '{parent_name}' found")
+            async def wrapped_func(client, interaction, *args, **kwargs):
+                user_id = str(interaction['member']['user']['id'])
+                allowed_ids = [str(id)] if isinstance(id, str) else [str(uid) for uid in id]
 
-            if "options" not in parent_command:
-                parent_command["options"] = []
-
-            if not description:
-                raise ValueError(f"Description is required for subcommand '{name}'")
-
-            sub_cmd = {
-                "type": 1,
-                "name": name or func.__name__,
-                "description": description,
-                "func": func
-            }
-
-            parent_command["options"].append(sub_cmd)
-            return func
+                if user_id not in allowed_ids:
+                    await client.api_helper.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message="You do not have permission to use this command.",
+                        ephemeral=True
+                    )
+                    return
+                return await func(client, interaction, *args, **kwargs)
+            return wrapped_func
         return wrapper
 
-    def sub_command_group(self, parent_name, group_name, description=None):     
+    def role(self, id=None):
         def wrapper(func):
-            parent_command = next((cmd for cmd in self.client.commands if cmd["name"] == parent_name), None)
-            if not parent_command:
-                raise ValueError(f"No parent command with name '{parent_name}' found")
+            async def wrapped_func(client, interaction, *args, **kwargs):
+                if 'roles' not in interaction['member']:
+                    await client.api_helper.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message="Unable to verify roles.",
+                        ephemeral=True
+                    )
+                    return
 
-            if "options" not in parent_command:
-                parent_command["options"] = []
+                user_roles = set(str(role) for role in interaction['member']['roles'])
+                allowed_roles = {str(id)} if isinstance(id, str) else {str(rid) for rid in id}
 
-            if not description:
-                raise ValueError(f"Description is required for subcommand group '{group_name}'")
+                if not user_roles.intersection(allowed_roles):
+                    await client.api_helper.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message="You do not have the required role to use this command.",
+                        ephemeral=True
+                    )
+                    return
+                return await func(client, interaction, *args, **kwargs)
+            return wrapped_func
+        return wrapper
 
-            sub_command_group = {
-                "type": 2,  
-                "name": group_name,
-                "description": description,
-                "options": [] 
-            }
+    def dev(self, id=None):
+        def wrapper(func):
+            async def wrapped_func(client, interaction, *args, **kwargs):
+                user_id = str(interaction['member']['user']['id'])
+                dev_ids = [str(id)] if isinstance(id, str) else [str(dev_id) for dev_id in id]
 
-            parent_command["options"].append(sub_command_group)
-            return func
+                if user_id not in dev_ids:
+                    await client.api_helper.send_interaction_response(
+                        interaction['id'],
+                        interaction['token'],
+                        message="This command is restricted to bot developers only.",
+                        ephemeral=True
+                    )
+                    return
+                return await func(client, interaction, *args, **kwargs)
+            return wrapped_func
         return wrapper
 
 class ComponentHandlerDecorator:
@@ -121,4 +195,3 @@ class ComponentHandlerDecorator:
             self.component_handlers[custom_id] = func
             return func
         return wrapper
-

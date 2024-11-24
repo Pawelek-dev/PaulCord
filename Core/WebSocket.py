@@ -3,7 +3,7 @@ import json
 import aiohttp
 import time
 
-class WebSocketConnection:
+class WebSocketManager:
     def __init__(self, client, shard_id=0, total_shards=1):
         self.client = client
         self.shard_id = shard_id
@@ -61,6 +61,7 @@ class WebSocketConnection:
 
             await asyncio.sleep(self.client.heartbeat_interval / 1000)
 
+
     async def reset_connection(self):
         print(f"Shard {self.shard_id}: Resetting WebSocket connection to initial state.")
         await self.close()
@@ -85,53 +86,8 @@ class WebSocketConnection:
                     self.reconnect_attempts = 0
                     await self.identify()
                     asyncio.create_task(self.heartbeat())
-
-                    async for msg in ws:
-                        if msg.type == aiohttp.WSMsgType.TEXT:
-                            payload = json.loads(msg.data)
-                            op_code = payload.get('op')
-                            event = payload.get('t', 'UNKNOWN')
-
-                            if op_code == 10:
-                                self.client.heartbeat_interval = payload['d']['heartbeat_interval']
-                                print(f"Shard {self.shard_id}: Received HELLO, heartbeat_interval set to: {self.client.heartbeat_interval}")
-
-                            elif op_code == 11:
-                                self.client.last_heartbeat_ack = True
-                                if self.ping_timestamp:
-                                    self.last_ping = (time.time() - self.ping_timestamp) * 1000
-                                    print(f"Shard {self.shard_id}: Ping: {self.last_ping:.2f} ms")
-                                print(f"Shard {self.shard_id}: Heartbeat acknowledged")
-
-                            elif event == 'READY':
-                                print(f"Shard {self.shard_id}: Bot connected to Discord Gateway")
-                                self.client.session_id = payload['d']['session_id']
-                                self.client.user_id = payload['d']['user']['id']
-                                await self.client.dispatch_event('on_ready')
-
-                            elif event == 'GUILD_CREATE':
-                                await self.client.dispatch_event('on_guild_create', payload['d'])
-
-                            elif event == 'GUILD_DELETE':
-                                await self.client.dispatch_event('on_guild_delete', payload['d'])
-
-                            elif event == 'MESSAGE_CREATE':
-                                await self.client.dispatch_event('on_message', payload['d'])
-
-                            elif event == 'INTERACTION_CREATE':
-                                print(f"Shard {self.shard_id}: Received INTERACTION_CREATE event.")
-                                interaction = payload['d']
-                                await self.client.handle_interaction(interaction)
-
-                            else:
-                                if event:
-                                    await self.client.dispatch_event(event.lower(), payload['d'])
-                                else:
-                                    print(f"Shard {self.shard_id}: Received event with no name: {payload}")
-
-                        elif msg.type == aiohttp.WSMsgType.ERROR:
-                            print(f"Shard {self.shard_id}: WebSocket connection error: {msg.data}")
-                            break
+                    print("WebSocket connected.")
+                    await self.listen()
 
             except aiohttp.ClientConnectionError as e:
                 self.reconnect_attempts += 1
@@ -157,7 +113,7 @@ class WebSocketConnection:
             "op": 2,
             "d": {
                 "token": self.client.token,
-                "intents": self.client.intents,
+                "intents": self.client.intents.value,
                 "properties": {
                     "$os": "linux",
                     "$browser": "PaulCLIClient",
@@ -166,9 +122,29 @@ class WebSocketConnection:
                 "shard": [self.shard_id, self.total_shards]
             }
         }
-        print(f"Shard {self.shard_id}/{self.total_shards}: Sending identify payload with intents: {self.client.intents}")
+        print(f"Identify payload: {payload}")
         if self.client.ws:
             try:
                 await self.client.ws.send_json(payload)
             except Exception as e:
                 print(f"Shard {self.shard_id}: Error sending identify payload: {e}")
+
+    async def listen(self):
+        async for msg in self.client.ws:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                try:
+                    data = msg.json()
+                    print(f"Received WebSocket message: {data}")
+
+                    if 'd' in data and data.get('t') == 'INTERACTION_CREATE':
+                        await self.client.interaction_handler.handle_interaction(data['d'])
+                    else:
+                        print(f"Skipping non-interaction message: {data}")
+                except Exception as e:
+                    print(f"Error while processing WebSocket message: {e}")
+            elif msg.type == aiohttp.WSMsgType.CLOSED:
+                print("WebSocket closed.")
+                break
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                print(f"WebSocket error: {msg.data}")
+                break

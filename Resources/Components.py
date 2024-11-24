@@ -30,7 +30,7 @@ class SelectMenu:
 
 class Modal:
     def __init__(self, title, custom_id, components=None):
-        self.type = 9  # Modal type
+        self.type = 9
         self.title = title
         self.custom_id = custom_id
         self.components = components or []
