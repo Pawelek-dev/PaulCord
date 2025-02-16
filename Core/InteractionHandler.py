@@ -1,7 +1,9 @@
+from rich.console import Console
+
 class InteractionHandler:
     def __init__(self, client):
         self.client = client
-
+        self.console = Console()
 
     async def send_interaction_response(self, interaction_id, interaction_token, message=None, embed=None, ephemeral=False, components=None):
         await self.client.api_helper.send_interaction_response(interaction_id, interaction_token, message, embed, ephemeral, components)
@@ -10,35 +12,43 @@ class InteractionHandler:
         command_name = interaction['data']['name']
         command = next((cmd for cmd in self.client.commands if cmd['name'] == command_name), None)
         if command:
-            await command['func'](self.client, interaction)
-            print(f"Received slash command: {command_name}")
+            try:
+                await command['func'](self.client, interaction)
+                self.console.print(f"[green]Received slash command: {command_name}[/green]")
+            except Exception as e:
+                self.console.print(f"[red]Error executing command: {command_name}[/red]")
+                self.client.logger.error(f"Error executing command {command_name}: {e}")
         else:
-            print(f"Unknown command: {command_name}")
+            self.console.print(f"[red]Unknown command: {command_name}[/red]")
 
     async def handle_component(self, interaction):
         custom_id = interaction['data'].get('custom_id', '')
         handler = self.client.component_handlers.get(custom_id)
         if handler:
-            await handler(self.client, interaction)
+            try:
+                await handler(self.client, interaction)
+            except Exception as e:
+                self.console.print(f"[red]Error handling component with custom_id: {custom_id}[/red]")
+                self.client.logger.error(f"Error while handling component {custom_id}: {e}")
         else:
-            print(f"No handler found for component with custom_id: {custom_id}")
+            self.console.print(f"[red]No handler found for component with custom_id: {custom_id}[/red]")
 
     async def handle_interaction(self, interaction):
-        print(f"Handling interaction: {interaction}")
+        self.console.print(f"[cyan]Handling interaction: {interaction.get('type', 'N/A')}[/cyan]")
         interaction_type = interaction.get('type')
 
         if not interaction_type:
-            print("Interaction type missing in payload.")
+            self.console.print("[red]Interaction type missing in payload.[/red]")
             return
 
         if interaction_type == 2:
             command_name = interaction['data']['name']
-            print(f"Received slash command: {command_name}")
+            self.console.print(f"[cyan]Received slash command: {command_name}[/cyan]")
             command = next((cmd for cmd in self.client.commands if cmd['name'] == command_name), None)
 
             if command:
                 try:
-                    print(f"Executing command: {command_name}")
+                    self.console.print(f"[cyan]Executing command: {command_name}[/cyan]")
                     result_message = await command['func'](self.client, interaction)
                     if result_message:
                         await self.client.api_helper.send_interaction_response(
@@ -47,16 +57,17 @@ class InteractionHandler:
                             message=result_message
                         )
                     else:
-                        print(f"No response message for command {command_name}, skipping send.")
+                        self.console.print(f"[yellow]No response message for command {command_name}, skipping send.[/yellow]")
                 except Exception as e:
-                    print(f"Error while executing command {command_name}: {e}")
+                    self.console.print(f"[red]Error while executing command {command_name}[/red]")
+                    self.client.logger.error(f"Error while executing command {command_name}: {e}")
                     await self.client.api_helper.send_interaction_response(
                         interaction["id"],
                         interaction["token"],
-                        message="An error occurred while executing the command."
+                        message=f"An error occurred while executing the command. \n`{e}`"
                     )
             else:
-                print(f"Unknown command: {command_name}")
+                self.console.print(f"[red]Unknown command: {command_name}[/red]")
                 await self.client.api_helper.send_interaction_response(
                     interaction["id"], interaction["token"], message="Unknown command"
                 )
@@ -68,12 +79,13 @@ class InteractionHandler:
                 try:
                     await handler(self.client, interaction)
                 except Exception as e:
-                    print(f"Error while handling component {custom_id}: {e}")
+                    self.console.print(f"[red]Error while handling component {custom_id}[/red]")
+                    self.client.logger.error(f"Error while handling component {custom_id}: {e}")
                     await self.client.api_helper.send_interaction_response(
-                        interaction["id"], interaction["token"], message="An error occurred while handling the component."
+                        interaction["id"], interaction["token"], message=f"An error occurred while handling the component.\n`{e}`"
                     )
             else:
-                print(f"No handler found for component with custom_id: {custom_id}")
+                self.console.print(f"[red]No handler found for component with custom_id: {custom_id}[/red]")
                 await self.client.api_helper.send_interaction_response(
                     interaction["id"], interaction["token"], message="No handler for this component."
                 )
@@ -83,13 +95,14 @@ class InteractionHandler:
             try:
                 await self.handle_modal(interaction, custom_id)
             except Exception as e:
-                print(f"Error while handling modal {custom_id}: {e}")
+                self.console.print(f"[red]Error while handling modal {custom_id}[/red]")
+                self.client.logger.error(f"Error while handling modal {custom_id}: {e}")
                 await self.client.api_helper.send_interaction_response(
-                    interaction["id"], interaction["token"], message="An error occurred while handling the modal."
+                    interaction["id"], interaction["token"], message=f"An error occurred while handling the modal. \n`{e}`"
                 )
 
         else:
-            print(f"Unknown interaction type: {interaction_type}")
+            self.console.print(f"[red]Unknown interaction type: {interaction_type}[/red]")
             await self.client.api_helper.send_interaction_response(
                 interaction["id"], interaction["token"], message="Unknown interaction type"
             )
