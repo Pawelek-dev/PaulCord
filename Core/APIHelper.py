@@ -18,7 +18,7 @@ class APIHelper:
         ephemeral: bool = False,
         components: Optional[Any] = None
     ) -> None:
-
+        
         url = f"https://discord.com/api/v10/interactions/{interaction_id}/{interaction_token}/callback"
         json_data = {"type": 4, "data": {}}
         if message:
